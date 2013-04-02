@@ -30,6 +30,8 @@ function s:Init()
     let s:omegacomplete2_path = substitute(s:omegacomplete2_path, '\\', '/', 'g')
 
     call <SID>ReloadClojure()
+
+    javashell clojure
     java (com.raymondwko.omegacomplete2/init)
 endfunction
 

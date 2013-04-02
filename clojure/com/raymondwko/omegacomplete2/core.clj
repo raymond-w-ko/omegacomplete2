@@ -2,10 +2,7 @@
   (:import vim.Vim))
 
 (defn init []
-  (def background-thread (future (while true (+ 1 1))))
-  (def user/on-exit-handlers
-    (conj user/on-exit-handlers
-          (fn [] future-cancel background-thread)))
+  ;(def background-thread (future (while true (+ 1 1))))
   )
 
 (defn capture-buffer [buffer_id]
