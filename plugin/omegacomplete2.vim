@@ -51,7 +51,7 @@ endfunction
 
 augroup omegacomplete2
     autocmd!
-    "autocmd CursorMovedI * call omegacomplete2#OnBufferInsertModeChange()
+    autocmd CursorMovedI * call omegacomplete2#OnBufferInsertModeChange()
 augroup END
 
 call s:Init()
