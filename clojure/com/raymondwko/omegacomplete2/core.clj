@@ -1,6 +1,6 @@
 (ns com.raymondwko.omegacomplete2
   [:import
-   [vim Vim ClojureInterpreter]
+   [vim Vim Clojure]
    [java.io StringWriter]]
   [:use [clojure.pprint :only (pprint)]]
   )
@@ -39,6 +39,15 @@
     nil
     ))
 
+(defn make-word-count [word-list m]
+  (if (not-empty word-list)
+    (let [word (first word-list)
+          value (m word)
+          existing-count (if (nil? value) 0 value)
+          ]
+      (recur (rest word-list) (assoc m word (inc existing-count))))
+    m))
+
 (defn tokenize [orig-value buffer-id buffer-lines]
   (let [buffer-word-list
         (->> buffer-lines
@@ -48,10 +57,9 @@
              (map #(concat %))
              (reduce concat)
              )]
-    (assoc orig-value buffer-id buffer-word-list)))
+    (assoc orig-value buffer-id (make-word-count buffer-word-list (sorted-map)))))
 
 (defn background-worker []
-  (Vim/msg "ping")
   (let [job (take-job!)
         [buffer-id buffer-lines] job]
     (swap! buffer-to-word-list tokenize buffer-id buffer-lines)) 
@@ -59,7 +67,7 @@
 
 (defn init []
   ; uncomment this to have Vim print normal REPL output
-  ;(set! (. ClojureInterpreter PRINT_REPL_OUTPUT) true)
+  ;(set! (. Clojure PRINT_REPL_OUTPUT) true)
 
   (def work-queue (java.util.concurrent.LinkedBlockingDeque.))
   (def buffer-to-word-list (atom {}))
@@ -68,6 +76,4 @@
     (Thread. background-worker)
     (.setDaemon true)
     (.start))
-
-  nil
   )
