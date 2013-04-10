@@ -1,35 +1,73 @@
 (ns com.raymondwko.omegacomplete2
-  [:import [vim Vim ClojureInterpreter]])
+  [:import
+   [vim Vim ClojureInterpreter]
+   [java.io StringWriter]]
+  [:use [clojure.pprint :only (pprint)]]
+  )
 
-(def words nil)
+(def work-queue nil)
+(def buffer-to-word-list nil)
 
 (defn exit-callback []
   ;
   )
 
-(defn init []
-  (def words (agent '()))
-  ; uncomment this to have Vim print normal REPL output
-  (set! (. ClojureInterpreter PRINT_REPL_OUTPUT) true)
+(defn trim-hyphen-prefix-suffix
+  "trim leading and trailing hyphens on words as a result of increment and
+   decrement operators in C style languages"
+  [word]
+  (-> word
+      (clojure.string/replace #"^-+?" "")
+      (clojure.string/replace #"-+?$" "")))
+
+(defn debug-write [thing]
+  (spit "C:\\omegacomplete2.txt" (pr-str thing))
   )
 
-(defn real-hyphenated-word? [word]
-  (and (not (.endsWith word "-")) (not (.startsWith word "-")) true)
-  )
+(defn offer-job! [job]
+  (.offerLast work-queue job)
+  work-queue)
 
-(defn tokenize [dummy lines]
-  (let [split-lines (map #(clojure.string/split % #"[^a-zA-Z0-9\-]+?") lines)
-        filtered-lines (map #(filter real-hyphenated-word? %) split-lines)
-        joined-lines (map #(concat %) filtered-lines)
-        word-list (reduce concat joined-lines)
-        ]
-    word-list
-    )
-  )
+(defn take-job! []
+  (.takeFirst work-queue))
 
-(defn capture-buffer [buffer_id]
-  (let [buf (Vim/buffer (str buffer_id))
+(defn capture-buffer [buffer-id]
+  (let [buf (Vim/buffer (str buffer-id))
         lines (map #(.getLine buf %) (range 1 (+ 1 (.getNumLines buf))))]
-    (send-off words tokenize lines)
-    @words
+    (offer-job! (list buffer-id lines))
+    (debug-write @buffer-to-word-list)
+    nil
     ))
+
+(defn tokenize [orig-value buffer-id buffer-lines]
+  (let [buffer-word-list
+        (->> buffer-lines
+             (map #(clojure.string/split % #"[^a-zA-Z0-9\-]+?"))
+             (map #(map trim-hyphen-prefix-suffix %))
+             (map #(filter (fn [word] (not-empty word)) %))
+             (map #(concat %))
+             (reduce concat)
+             )]
+    (assoc orig-value buffer-id buffer-word-list)))
+
+(defn background-worker []
+  (Vim/msg "ping")
+  (let [job (take-job!)
+        [buffer-id buffer-lines] job]
+    (swap! buffer-to-word-list tokenize buffer-id buffer-lines)) 
+  (recur))
+
+(defn init []
+  ; uncomment this to have Vim print normal REPL output
+  ;(set! (. ClojureInterpreter PRINT_REPL_OUTPUT) true)
+
+  (def work-queue (java.util.concurrent.LinkedBlockingDeque.))
+  (def buffer-to-word-list (atom {}))
+
+  (doto
+    (Thread. background-worker)
+    (.setDaemon true)
+    (.start))
+
+  nil
+  )
