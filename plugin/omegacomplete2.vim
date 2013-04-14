@@ -31,12 +31,12 @@ function s:Init()
 
     call <SID>ReloadClojure()
 
-    javashell clojure
+    javarepl clojure
     java (com.raymondwko.omegacomplete2/init)
 endfunction
 
 function <SID>ReloadClojure()
-    javashell clojure
+    javarepl clojure
     exe 'java (load-string (slurp "' . s:omegacomplete2_path . '/core.clj"))'
 endfunction
 
@@ -45,7 +45,7 @@ function s:LoadMappings()
 endfunction
 
 function omegacomplete2#OnBufferInsertModeChange()
-    javashell clojure
+    javarepl clojure
     exe 'java (com.raymondwko.omegacomplete2/capture-buffer ' . bufnr('%') . ')'
 endfunction
 
