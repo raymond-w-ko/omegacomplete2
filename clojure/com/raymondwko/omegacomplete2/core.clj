@@ -2,6 +2,9 @@
   [:import [vim Vim Clojure] [java.io StringWriter]]
   [:use [clojure.pprint :only (pprint)]])
 
+(def split-point-regexp #"[^a-zA-Z0-9\-]+?")
+(def word-regexp #"[a-zA-Z0-9\-]+?")
+
 (def buffer-snapshot-queue nil)
 (def buffer-to-word-with-count nil)
 (def global-word-count nil)
@@ -32,7 +35,7 @@
         line-numbers (range 1 (+ 1 (.getNumLines buffer)))
         lines (map #(.getLine buffer %) line-numbers)]
     (offer-job! (list buffer-id lines))
-    (debug-write @global-word-count)
+    ;(debug-write @global-word-count)
     ))
 
 (defn get-count
@@ -66,7 +69,7 @@
         ,
         word-list
         (->> lines
-             (map #(clojure.string/split % #"[^a-zA-Z0-9\-]+?"))
+             (map #(clojure.string/split % split-point-regexp))
              (map #(map trim-hyphen-prefix-suffix %))
              (map #(filter (fn [word] (not-empty word)) %))
              (map #(concat %))
@@ -88,13 +91,27 @@
            process-buffer-snapshot buffer-id buffer-lines)) 
   (recur))
 
-(defn calculate-and-fill-results
-  []
-  (let [results (Vim/eval "g:omegacomplete2_results")]
-    (.add results "cheeseburger") 
-    (.add results "meow") 
-    (.add results "purr") 
-    "undefined"))
+(defn get-last-word
+  ([line]
+   (get-last-word line
+                  (dec (.length line))))
+  ([line i]
+   (cond
+     (< i 0)
+     line
+     (nil? (re-matches word-regexp (subs line i (inc i))))
+     (subs line (inc i))
+     :else
+     (recur line (dec i)))))
+
+(defn calculate-and-fill-results []
+  (let [results (Vim/eval "g:omegacomplete2_results")
+        cursor-col (dec (.getColPos (Vim/window "false")))
+        line-prefix (subs (Vim/line) 0 cursor-col)
+        word (get-last-word line-prefix)
+        ]
+   (Vim/msg word) 
+))
 
 (defn set-is-corrections-only
   []
