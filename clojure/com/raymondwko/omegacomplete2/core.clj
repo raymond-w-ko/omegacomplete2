@@ -1,6 +1,6 @@
 (ns com.raymondwko.omegacomplete2
   [:import [vim Vim Clojure] [java.io StringWriter]]
-  [:use [clojure.pprint :only (pprint)]])
+  [:require [clojure.core [reducers :as r]]])
 
 (def split-point-regexp #"[^a-zA-Z0-9\-]+?")
 (def word-regexp #"[a-zA-Z0-9\-]+?")
@@ -92,9 +92,9 @@
   (recur))
 
 (defn get-last-word
-  ([line]
-   (get-last-word line
-                  (dec (.length line))))
+  "returns the last word of given the input line"
+  ([line] (get-last-word line
+                         (dec (.length line))))
   ([line i]
    (cond
      (< i 0)
@@ -104,13 +104,33 @@
      :else
      (recur line (dec i)))))
 
+(defn reducef
+  ([] (vector))
+  ([a b] (conj a b)))
+
+(defn make-get-score [input]
+  (fn [word]
+    (list word
+          (cond
+            (.isEmpty input) 0
+            (.startsWith word input) 50
+            :else 0))))
+
+(defn positive-score [pair] (> (second pair) 0))
+
 (defn calculate-and-fill-results []
-  (let [results (Vim/eval "g:omegacomplete2_results")
+  (let [output (Vim/eval "g:omegacomplete2_results")
         cursor-col (dec (.getColPos (Vim/window "false")))
         line-prefix (subs (Vim/line) 0 cursor-col)
         word (get-last-word line-prefix)
+        score-fn (make-get-score word)
+        coll (->> @global-word-count
+                  (r/map (fn [a b] a))
+                  (r/map score-fn)
+                  (r/filter positive-score))
+        results (r/fold reducef coll)
         ]
-   (Vim/msg word) 
+    (doseq [pair results] (.add output (first pair)))
 ))
 
 (defn set-is-corrections-only
