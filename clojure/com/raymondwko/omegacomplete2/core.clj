@@ -1,8 +1,22 @@
 (ns com.raymondwko.omegacomplete2
-  [:import [vim Vim Clojure] [java.io StringWriter]]
+  [:import
+   [vim Vim Clojure]
+   [java.io StringWriter]
+   [java.lang Character]
+   [javax.swing JOptionPane] 
+   ]
+  [:require [clojure.pprint]] 
   [:require [clojure.core [reducers :as r]]])
 
-(def split-point-regexp #"[^a-zA-Z0-9\-]+?")
+(defn MessageBox [text]
+  (JOptionPane/showMessageDialog nil text)
+  
+  )
+(def map! (comp doall map))
+(def filter! (comp doall filter))
+(def reduce! (comp doall reduce))
+
+(def split-point-regexp #"[^a-zA-Z0-9\-]+")
 (def word-regexp #"[a-zA-Z0-9\-]+?")
 
 (def buffer-snapshot-queue nil)
@@ -14,11 +28,11 @@
    or post decrement in a C style language"
   [word]
   (-> word
-      (clojure.string/replace #"^-+?" "")
-      (clojure.string/replace #"-+?$" "")))
+      (clojure.string/replace #"^-+" "")
+      (clojure.string/replace #"-+$" "")))
 
 (defn debug-write [thing]
-  (spit "C:\\omegacomplete2.txt" (pr-str thing)))
+  (spit "C:\\SVN\\omegacomplete2.txt" (pr-str thing)))
 
 (defn offer-job! [job] (.offerLast buffer-snapshot-queue job))
 (defn take-job! [] (.takeFirst buffer-snapshot-queue))
@@ -34,8 +48,8 @@
         buffer-name (.getName buffer)
         line-numbers (range 1 (+ 1 (.getNumLines buffer)))
         lines (map #(.getLine buffer %) line-numbers)]
+    (debug-write lines)
     (offer-job! (list buffer-id lines))
-    ;(debug-write @global-word-count)
     ))
 
 (defn get-count
@@ -65,21 +79,32 @@
     (reduce func old-global-word-count word-count)))
 
 (defn process-buffer-snapshot [old-buffer-to-word-with-count id lines]
-  (let [old-word-count (old-buffer-to-word-with-count id) 
-        ,
-        word-list
-        (->> lines
-             (map #(clojure.string/split % split-point-regexp))
-             (map #(map trim-hyphen-prefix-suffix %))
-             (map #(filter (fn [word] (not-empty word)) %))
-             (map #(concat %))
-             (reduce concat))
-        ,
-        word-count (make-word-count-map word-list)]
+  (letfn [(split-to-words [line] (clojure.string/split line split-point-regexp))
+          (trim-hyphens [coll] (map trim-hyphen-prefix-suffix coll))
+          (remove-empty-strings [coll] (filter not-empty coll))]
+    (let [old-word-count (old-buffer-to-word-with-count id) 
+          ,
+          dummy0 (MessageBox "hajime1")
+          word-list (->> lines
+                         (map split-to-words)
+                         (map trim-hyphens)
+                         (map remove-empty-strings)
+                         (map concat)
+                         (reduce concat))
+          ,
+          dummy1 (MessageBox "hajime2")
+          ,
+          ;dummy2 (debug-write word-list)
+          ,
+          dummy3 (MessageBox "hajime3")
+          ,
+          word-count (make-word-count-map word-list)]
     (swap! global-word-count update-global-word-count word-count +)
     (if old-word-count
       (swap! global-word-count update-global-word-count old-word-count -))
-    (assoc old-buffer-to-word-with-count id word-count)))
+    (assoc old-buffer-to-word-with-count id word-count)
+    
+    )))
 
 (defn background-worker
   "consumes buffer snapshots from buffer-snapshot-queue and updates
@@ -88,7 +113,9 @@
   (let [job (take-job!)
         [buffer-id buffer-lines] job]
     (swap! buffer-to-word-with-count
-           process-buffer-snapshot buffer-id buffer-lines)) 
+           process-buffer-snapshot buffer-id buffer-lines)
+    ;(debug-write @global-word-count)
+    ) 
   (recur))
 
 (defn get-last-word
@@ -104,15 +131,32 @@
      :else
      (recur line (dec i)))))
 
-(defn reducef
-  ([] (vector))
-  ([a b] (conj a b)))
+(defn title-case-match?
+  [word input]
+  (let [formatted-word
+        (apply str
+               (cons (Character/toUpperCase (first word)) (rest word)))
+        only-upper
+        (apply str
+               (filter #(Character/isUpperCase %1) formatted-word))]
+    (= input (clojure.string/lower-case only-upper))))
+
+(defn underscore-match?
+  []
+  nil
+  )
 
 (defn make-get-score [input]
-  (fn [word]
+  "Creates the get-score function given the current word the cursor is on. The
+   inner function returns a word score pair in a list, where score is how
+   preferable a match is."
+  (fn
+    [word]
     (list word
           (cond
             (.isEmpty input) 0
+            (= word input) 0
+            (title-case-match? word input) 100
             (.startsWith word input) 50
             :else 0))))
 
@@ -124,6 +168,9 @@
         line-prefix (subs (Vim/line) 0 cursor-col)
         word (get-last-word line-prefix)
         score-fn (make-get-score word)
+        reducef (fn
+                  ([] (vector))
+                  ([a b] (conj a b)))
         coll (->> @global-word-count
                   (r/map (fn [a b] a))
                   (r/map score-fn)

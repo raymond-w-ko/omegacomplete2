@@ -172,4 +172,12 @@ function Omegacomplete2Func(findstart, base)
     endif
 endfunction
 
+function omegacomplete2#UseFirstEntryOfPopup()
+    if pumvisible()
+        return "\<C-n>\<C-y>"
+    else
+        return "\<Tab>"
+    endif
+endfunction
+
 call s:Init()
