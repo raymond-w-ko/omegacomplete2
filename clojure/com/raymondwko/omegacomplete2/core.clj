@@ -122,8 +122,9 @@
 (defn title-case-match?
   [^String word ^String input]
   (let [formatted-word
-        (apply str
-               (cons (Character/toUpperCase (.charAt word 0)) (rest word)))
+        (apply str (cons (Character/toUpperCase (.charAt word 0))
+                         (rest word)))
+        ,
         only-upper
         (apply str
                (filter (fn [^java.lang.Character letter] (Character/isUpperCase letter))
@@ -151,6 +152,7 @@
     [^String word]
     (list word
           (cond
+            (<= (.length word) 1) 0
             (<= (.length input) 1) 0
             (= word input) 0
             (title-case-match? word input) 120
@@ -162,11 +164,28 @@
 (defn positive-score [pair] (> (second pair) 0))
 
 (defn get-relevant-subset [sc input]
-  (let [^Character start-bound-char (first input)
-        start-bound (str start-bound-char)
-        end-char-value (+ 1 (int start-bound-char))
-        end-bound (str (char end-char-value))]
-    (vec (subseq sc >= start-bound < end-bound))))
+  (let [^Character start-char (first input)
+        upper-start-char (Character/toUpperCase start-char)
+
+        start-bound (str start-char)
+        upper-start-bound (str upper-start-char)
+
+        end-char (char (+ 1 (int start-char)))
+        upper-end-char (Character/toUpperCase end-char)
+
+        end-bound (str end-char)
+        upper-end-bound (str upper-end-char)]
+    (into (vec (subseq sc >= start-bound < end-bound))
+          (vec (subseq sc >= upper-start-bound < upper-end-bound)))))
+
+(defn results-comparator [a b]
+  "score reversed since we want highest scores first"
+  (let [[word0 score0] a 
+        [word1 score1] b]
+    (cond
+      (= score0 score1) (compare word0 word1)
+      ; not an error!
+      :else (compare score1 score0))))
 
 (defn calculate-and-fill-results []
   (let [^vim.List output (Vim/eval "g:omegacomplete2_results")
@@ -184,8 +203,10 @@
             reducef (fn
                       ([] (vector))
                       ([a b] (conj a b)))
-            results (r/fold reducef coll)] 
-        (doseq [pair results] (.add output (first pair)))))))
+            results (r/fold reducef coll)
+            sorted-results (sort results-comparator results)
+            ] 
+        (doseq [pair sorted-results] (.add output (first pair)))))))
 
 (defn set-is-corrections-only
   []
