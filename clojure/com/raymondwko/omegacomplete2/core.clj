@@ -130,7 +130,7 @@
                        formatted-word))]
     (= input (clojure.string/lower-case only-upper))))
 
-(defn make-separator-match? [sep]
+(defn make-separator-match? [^Character sep]
   (fn [^String word ^String input]
     (letfn [(preceded-by-hypen?  [tuple]
               (let [index (first tuple)]
