@@ -18,12 +18,12 @@
 (def filter! (comp doall filter))
 (def reduce! (comp doall reduce))
 
-(def split-point-regexp #"[^a-zA-Z0-9\-]+")
-(def word-regexp #"[a-zA-Z0-9\-]+?")
+(def split-point-regexp #"[^a-zA-Z0-9\-_]+")
+(def word-regexp #"[a-zA-Z0-9\-_]+?")
 
-(def ^LinkedBlockingDeque buffer-snapshot-queue nil)
-(def buffer-to-word-with-count nil)
-(def global-word-count nil)
+(def ^LinkedBlockingDeque buffer-snapshot-queue)
+(def buffer-to-word-with-count)
+(def global-word-count)
 
 (defn trim-hyphen-prefix-suffix
   "trim leading and trailing hyphens on words that could have resulted from pre
@@ -90,8 +90,6 @@
                          (map remove-empty-strings)
                          (apply concat))
           ,
-          ;dummy (debug-write word-list)
-          ,
           word-count (make-word-count-map word-list)]
     (swap! global-word-count update-global-word-count word-count +)
     (if old-word-count
@@ -105,9 +103,7 @@
   (let [job (take-job!)
         [buffer-id buffer-lines] job]
     (swap! buffer-to-word-with-count
-           process-buffer-snapshot buffer-id buffer-lines)
-    ;(debug-write @global-word-count)
-    ) 
+           process-buffer-snapshot buffer-id buffer-lines)) 
   (recur))
 
 (defn get-last-word
@@ -134,10 +130,18 @@
                        formatted-word))]
     (= input (clojure.string/lower-case only-upper))))
 
-(defn underscore-match?
-  [^String word ^String input]
-  false
-  )
+(defn make-separator-match? [sep]
+  (fn [^String word ^String input]
+    (letfn [(preceded-by-hypen?  [tuple]
+              (let [index (first tuple)]
+                (cond
+                  (= index 0) true
+                  (= (.charAt word (dec index)) sep) true
+                  :else false)))]
+      (let [pairs-list (partition 2 (interleave (range) word))
+            abbrev-list (filter preceded-by-hypen? pairs-list)
+            abbrev (clojure.string/lower-case (apply str (map second abbrev-list)))]
+        (= input abbrev)))))
 
 (defn make-get-score [^String input]
   "Creates the get-score function given the current word the cursor is on. The
@@ -147,32 +151,41 @@
     [^String word]
     (list word
           (cond
-            (.isEmpty input) 0
+            (<= (.length input) 1) 0
             (= word input) 0
-            (title-case-match? word input) 100
-            (underscore-match? word input) 100
+            (title-case-match? word input) 120
+            ((make-separator-match? \_) word input) 110
+            ((make-separator-match? \-) word input) 100
             (.startsWith word input) 50
             :else 0))))
 
 (defn positive-score [pair] (> (second pair) 0))
 
+(defn get-relevant-subset [sc input]
+  (let [^Character start-bound-char (first input)
+        start-bound (str start-bound-char)
+        end-char-value (+ 1 (int start-bound-char))
+        end-bound (str (char end-char-value))]
+    (vec (subseq sc >= start-bound < end-bound))))
+
 (defn calculate-and-fill-results []
   (let [^vim.List output (Vim/eval "g:omegacomplete2_results")
         cursor-col (dec (.getColPos (Vim/window "false")))
         line-prefix (subs (Vim/line) 0 cursor-col)
-        word (get-last-word line-prefix)
-        score-fn (make-get-score word)
-        reducef (fn
-                  ([] (vector))
-                  ([a b] (conj a b)))
-        coll (->> @global-word-count
-                  (r/map (fn [a b] a))
-                  (r/map score-fn)
-                  (r/filter positive-score))
-        results (r/fold reducef coll)
+        ^String word (get-last-word line-prefix)
         ]
-    (doseq [pair results] (.add output (first pair)))
-))
+    (if (= false (.isEmpty word))
+      (let [score-fn (make-get-score word)
+            words (get-relevant-subset @global-word-count word)
+            coll (->> words
+                      (r/map (fn [pair] (first pair)))
+                      (r/map score-fn)
+                      (r/filter positive-score))
+            reducef (fn
+                      ([] (vector))
+                      ([a b] (conj a b)))
+            results (r/fold reducef coll)] 
+        (doseq [pair results] (.add output (first pair)))))))
 
 (defn set-is-corrections-only
   []
@@ -191,4 +204,5 @@
   (doto
     (Thread. ^java.lang.Runnable background-worker)
     (.setDaemon true)
+    (.setPriority Thread/MIN_PRIORITY)
     (.start)))
