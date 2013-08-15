@@ -1,16 +1,18 @@
 (ns com.raymondwko.omegacomplete2
   [:import
-   [vim Vim Clojure]
+   [vim Vim Clojure List]
    [java.io StringWriter]
    [java.lang Character]
+   [java.util.concurrent LinkedBlockingDeque]
    [javax.swing JOptionPane] 
    ]
   [:require [clojure.pprint]] 
   [:require [clojure.core [reducers :as r]]])
 
+(set! *warn-on-reflection* true)
+
 (defn MessageBox [text]
   (JOptionPane/showMessageDialog nil text)
-  
   )
 (def map! (comp doall map))
 (def filter! (comp doall filter))
@@ -19,7 +21,7 @@
 (def split-point-regexp #"[^a-zA-Z0-9\-]+")
 (def word-regexp #"[a-zA-Z0-9\-]+?")
 
-(def buffer-snapshot-queue nil)
+(def ^LinkedBlockingDeque buffer-snapshot-queue nil)
 (def buffer-to-word-with-count nil)
 (def global-word-count nil)
 
@@ -38,19 +40,17 @@
 (defn take-job! [] (.takeFirst buffer-snapshot-queue))
 
 (def banned-buffers
-  #("GoToFile" "ControlP" "__Scratch__" "__Gundo__" "__Gundo_Preview__"))
+  #{"GoToFile" "ControlP" "__Scratch__" "__Gundo__" "__Gundo_Preview__"})
 
 (defn capture-buffer
   "creates a snapshot of a buffer and queues it for processing by the
    background thread"
   [buffer-id]
   (let [buffer (Vim/buffer (str buffer-id))
-        buffer-name (.getName buffer)
-        line-numbers (range 1 (+ 1 (.getNumLines buffer)))
-        lines (map #(.getLine buffer %) line-numbers)]
-    (debug-write lines)
-    (offer-job! (list buffer-id lines))
-    ))
+        buffer-name (.getName buffer)]
+    (if (false? (contains? banned-buffers buffer-name))
+      (let [lines (seq (.getAllLines buffer))]
+        (offer-job! (list buffer-id lines))))))
 
 (defn get-count
   "gets the value of collection coll given the key k, but returns 0 if the key
@@ -84,27 +84,19 @@
           (remove-empty-strings [coll] (filter not-empty coll))]
     (let [old-word-count (old-buffer-to-word-with-count id) 
           ,
-          dummy0 (MessageBox "hajime1")
           word-list (->> lines
                          (map split-to-words)
                          (map trim-hyphens)
                          (map remove-empty-strings)
-                         (map concat)
-                         (reduce concat))
+                         (apply concat))
           ,
-          dummy1 (MessageBox "hajime2")
-          ,
-          ;dummy2 (debug-write word-list)
-          ,
-          dummy3 (MessageBox "hajime3")
+          ;dummy (debug-write word-list)
           ,
           word-count (make-word-count-map word-list)]
     (swap! global-word-count update-global-word-count word-count +)
     (if old-word-count
       (swap! global-word-count update-global-word-count old-word-count -))
-    (assoc old-buffer-to-word-with-count id word-count)
-    
-    )))
+    (assoc old-buffer-to-word-with-count id word-count))))
 
 (defn background-worker
   "consumes buffer snapshots from buffer-snapshot-queue and updates
@@ -120,7 +112,7 @@
 
 (defn get-last-word
   "returns the last word of given the input line"
-  ([line] (get-last-word line
+  ([^String line] (get-last-word line
                          (dec (.length line))))
   ([line i]
    (cond
@@ -132,38 +124,40 @@
      (recur line (dec i)))))
 
 (defn title-case-match?
-  [word input]
+  [^String word ^String input]
   (let [formatted-word
         (apply str
-               (cons (Character/toUpperCase (first word)) (rest word)))
+               (cons (Character/toUpperCase (.charAt word 0)) (rest word)))
         only-upper
         (apply str
-               (filter #(Character/isUpperCase %1) formatted-word))]
+               (filter (fn [^java.lang.Character letter] (Character/isUpperCase letter))
+                       formatted-word))]
     (= input (clojure.string/lower-case only-upper))))
 
 (defn underscore-match?
-  []
-  nil
+  [^String word ^String input]
+  false
   )
 
-(defn make-get-score [input]
+(defn make-get-score [^String input]
   "Creates the get-score function given the current word the cursor is on. The
    inner function returns a word score pair in a list, where score is how
    preferable a match is."
   (fn
-    [word]
+    [^String word]
     (list word
           (cond
             (.isEmpty input) 0
             (= word input) 0
             (title-case-match? word input) 100
+            (underscore-match? word input) 100
             (.startsWith word input) 50
             :else 0))))
 
 (defn positive-score [pair] (> (second pair) 0))
 
 (defn calculate-and-fill-results []
-  (let [output (Vim/eval "g:omegacomplete2_results")
+  (let [^vim.List output (Vim/eval "g:omegacomplete2_results")
         cursor-col (dec (.getColPos (Vim/window "false")))
         line-prefix (subs (Vim/line) 0 cursor-col)
         word (get-last-word line-prefix)
@@ -190,11 +184,11 @@
   ; uncomment this to have Vim print normal REPL output
   ;(set! (. Clojure PRINT_REPL_OUTPUT) true)
 
-  (def buffer-snapshot-queue (java.util.concurrent.LinkedBlockingDeque.))
+  (def ^LinkedBlockingDeque buffer-snapshot-queue (LinkedBlockingDeque.))
   (def buffer-to-word-with-count (atom {}))
   (def global-word-count (atom (sorted-map)))
 
   (doto
-    (Thread. background-worker)
+    (Thread. ^java.lang.Runnable background-worker)
     (.setDaemon true)
     (.start)))
