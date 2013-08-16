@@ -200,13 +200,15 @@
                       (r/map (fn [pair] (first pair)))
                       (r/map score-fn)
                       (r/filter positive-score))
-            reducef (fn
-                      ([] (vector))
-                      ([a b] (conj a b)))
-            results (r/fold reducef coll)
-            sorted-results (sort results-comparator results)
-            ] 
-        (doseq [pair sorted-results] (.add output (first pair)))))))
+            combinef (fn
+                      ([] (vector) )
+                      ([a b] (into a b)))
+            reducef (fn [a b] (conj a b))
+            results (remove empty? (r/fold combinef reducef coll))
+            sorted-results (sort results-comparator results)] 
+        (doseq [pair sorted-results]
+          (if (not-empty pair)
+            (.add output (first pair))))))))
 
 (defn set-is-corrections-only
   []
